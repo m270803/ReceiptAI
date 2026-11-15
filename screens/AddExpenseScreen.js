@@ -14,27 +14,32 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { Ionicons } from '@expo/vector-icons';
 import * as Print from 'expo-print';
 import { shareAsync } from 'expo-sharing';
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  query,
-  updateDoc,
-  where,
-} from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import { getAuth } from 'firebase/auth';
+import { requestApi } from '../utils/api';
 
 const CATEGORIES = ['All', 'Food', 'Rent', 'Travel', 'Shopping', 'Utilities', 'Other'];
 const MONTHLY_LIMIT = 40000;
+
+const parseLocalDate = (value) => {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || '');
+  if (!match) return new Date(value);
+  const [, year, month, day] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day));
+  if (
+    date.getFullYear() !== Number(year) ||
+    date.getMonth() !== Number(month) - 1 ||
+    date.getDate() !== Number(day)
+  ) {
+    return new Date(Number.NaN);
+  }
+  return date;
+};
 
 export default function AddExpenseScreen({ navigation, route }) {
   const [title, setTitle] = useState('');
   const [amount, setAmount] = useState('');
   const [category, setCategory] = useState('Food');
   const [date, setDate] = useState(new Date());
+  const [receiptItems, setReceiptItems] = useState([]);
   const [showDate, setShowDate] = useState(false);
   const [showCat, setShowCat] = useState(false);
   const [expenses, setExpenses] = useState([]);
@@ -45,10 +50,6 @@ export default function AddExpenseScreen({ navigation, route }) {
   const [sortNewest, setSortNewest] = useState(true);
   const [searchText, setSearchText] = useState('');
 
-  const auth = getAuth();
-  const user = auth.currentUser;
-  const userId = user?.uid;
-
   /* AUTO-FILL FROM ScanReceiptScreen */
   useEffect(() => {
     if (route?.params?.fromScan) {
@@ -57,6 +58,14 @@ export default function AddExpenseScreen({ navigation, route }) {
 
       setTitle(t);
       setAmount(String(a));
+      if (CATEGORIES.includes(route.params.prefillCategory)) {
+        setCategory(route.params.prefillCategory);
+      }
+      if (route.params.prefillDate) {
+        const prefilledDate = parseLocalDate(route.params.prefillDate);
+        if (!Number.isNaN(prefilledDate.getTime())) setDate(prefilledDate);
+      }
+      setReceiptItems(Array.isArray(route.params.prefillItems) ? route.params.prefillItems : []);
       setShowForm(true);
       navigation.setParams({ fromScan: false });
     }
@@ -82,32 +91,14 @@ export default function AddExpenseScreen({ navigation, route }) {
 
   /* FETCH EXPENSES */
   const fetchExpenses = async () => {
-    if (!userId) return;
-
-    const startOfMonth = new Date(date.getFullYear(), date.getMonth(), 1).toISOString();
-    const endOfMonth = new Date(date.getFullYear(), date.getMonth() + 1, 0).toISOString();
-
-    const expensesRef = collection(
-      db,
-      'users',
-      userId,
-      'incomeTrackers',
-      'default',
-      'expenses'
-    );
-
-    const q = query(
-      expensesRef,
-      where('date', '>=', startOfMonth),
-      where('date', '<=', endOfMonth)
-    );
-
-    const snapshot = await getDocs(q);
-    const list = snapshot.docs.map((docSnap) => ({
-      id: docSnap.id,
-      ...docSnap.data(),
-      date: new Date(docSnap.data().date),
-    }));
+    const data = await requestApi('/api/finance/expenses', undefined, 'GET');
+    const list = data
+      .map((expense) => ({ ...expense, date: new Date(expense.date) }))
+      .filter(
+        (expense) =>
+          expense.date.getFullYear() === date.getFullYear() &&
+          expense.date.getMonth() === date.getMonth()
+      );
 
     setExpenses(list);
     applyFilters(list);
@@ -115,7 +106,7 @@ export default function AddExpenseScreen({ navigation, route }) {
 
   useEffect(() => {
     fetchExpenses();
-  }, [userId]);
+  }, [date.getFullYear(), date.getMonth()]);
 
   useEffect(() => {
     applyFilters(expenses);
@@ -124,44 +115,22 @@ export default function AddExpenseScreen({ navigation, route }) {
   /* SAVE EXPENSE */
   const saveExpense = async () => {
     if (!title || !amount) return alert('Please fill all fields');
-    if (!userId) return alert('User not authenticated');
-
     const expenseData = {
       title,
       amount: parseFloat(amount),
       category,
       date: date.toISOString(),
       createdAt: new Date(),
+      ...(receiptItems.length ? { items: receiptItems } : {}),
     };
 
     try {
       if (editingId) {
-        await updateDoc(
-          doc(
-            db,
-            'users',
-            userId,
-            'incomeTrackers',
-            'default',
-            'expenses',
-            editingId
-          ),
-          expenseData
-        );
+        await requestApi(`/api/finance/expenses/${editingId}`, expenseData, 'PUT');
         alert('Expense updated!');
         setEditingId(null);
       } else {
-        await addDoc(
-          collection(
-            db,
-            'users',
-            userId,
-            'incomeTrackers',
-            'default',
-            'expenses'
-          ),
-          expenseData
-        );
+        await requestApi('/api/finance/expenses', expenseData);
         alert('Expense saved!');
       }
 
@@ -169,10 +138,11 @@ export default function AddExpenseScreen({ navigation, route }) {
       setAmount('');
       setCategory('Food');
       setDate(new Date());
+      setReceiptItems([]);
 
-      fetchExpenses();
+      await fetchExpenses();
     } catch (error) {
-      alert('Failed to save expense');
+      Alert.alert('Failed to save expense', error.message);
     }
   };
 
@@ -182,24 +152,19 @@ export default function AddExpenseScreen({ navigation, route }) {
     setAmount(item.amount.toString());
     setCategory(item.category);
     setDate(new Date(item.date));
+    setReceiptItems(Array.isArray(item.items) ? item.items : []);
     setEditingId(item.id);
     setShowForm(true);
   };
 
   /* DELETE */
   const handleDelete = async (id) => {
-    await deleteDoc(
-      doc(
-        db,
-        'users',
-        userId,
-        'incomeTrackers',
-        'default',
-        'expenses',
-        id
-      )
-    );
-    fetchExpenses();
+    try {
+      await requestApi(`/api/finance/expenses/${id}`, undefined, 'DELETE');
+      await fetchExpenses();
+    } catch (error) {
+      Alert.alert('Delete failed', error.message);
+    }
   };
 
   /* RENDER ITEM */
@@ -300,6 +265,20 @@ export default function AddExpenseScreen({ navigation, route }) {
             <Text>{date.toDateString()}</Text>
             <Ionicons name="calendar" size={20} />
           </TouchableOpacity>
+
+          {receiptItems.length > 0 && (
+            <View style={styles.receiptItems}>
+              <Text style={styles.label}>Receipt items</Text>
+              {receiptItems.map((item, index) => (
+                <View key={`${item.name}-${index}`} style={styles.receiptItem}>
+                  <Text style={styles.receiptItemName}>{item.name}</Text>
+                  <Text style={styles.receiptItemAmount}>
+                    {item.qty ? `${item.qty} × ` : ''}₹{item.amount || item.rate || '—'}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
 
           <TouchableOpacity style={styles.btn} onPress={saveExpense}>
             <Text style={styles.btnText}>{editingId ? 'Update' : 'Save'} Expense</Text>
@@ -517,6 +496,19 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
+  receiptItems: {
+    marginTop: 16,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: '#e8edf4',
+  },
+  receiptItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 6,
+  },
+  receiptItemName: { flex: 1, color: '#334155', fontSize: 13 },
+  receiptItemAmount: { color: '#64748b', fontSize: 12, marginLeft: 8 },
 
   btn: {
     backgroundColor: '#1c2b48',

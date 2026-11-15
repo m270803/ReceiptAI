@@ -11,9 +11,7 @@ import {
   Modal,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { auth, db } from '../firebaseConfig';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { doc, setDoc } from 'firebase/firestore';
+import { registerAccount } from '../utils/api';
 
 const { height } = Dimensions.get('window');
 
@@ -75,25 +73,11 @@ export default function SignupScreen({ navigation }) {
     setIsSubmitting(true);
 
     try {
-      const { user } = await createUserWithEmailAndPassword(auth, email, password);
-      const uid = user.uid;
-
-      await setDoc(doc(db, 'users', uid), {
-        uid,
-        firstName,
-        lastName,
-        email,
-        createdAt: new Date().toISOString(),
-      });
-
-      navigation.navigate('Login');
+      const user = await registerAccount({ firstName, lastName, email, password });
+      navigation.navigate('OTPVerification', { uid: user.uid, email: user.email });
     } catch (err) {
-      if (err.code === 'auth/email-already-in-use') {
-        Alert.alert('Email In Use', 'This email is already registered. Please log in.');
-      } else {
-        console.error(err);
-        Alert.alert('Signup Failed', err.message);
-      }
+      console.error(err);
+      Alert.alert('Signup Failed', err.message);
     } finally {
       setIsSubmitting(false);
     }

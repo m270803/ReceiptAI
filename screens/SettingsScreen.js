@@ -11,8 +11,8 @@ import {
 import { Ionicons } from '@expo/vector-icons';
 import Constants from 'expo-constants';
 import { Picker } from '@react-native-picker/picker';
-import { doc, getDoc, setDoc } from 'firebase/firestore';
-import { auth, db } from '../firebaseConfig'; // Ensure this path is correct
+import { requestApi } from '../utils/api';
+import { ThemeContext } from '../ThemeContext';
 
 export default function SettingsScreen({ navigation }) {
   const systemTheme = useColorScheme(); // 'light' or 'dark'
@@ -21,36 +21,28 @@ export default function SettingsScreen({ navigation }) {
   const [walletSync, setWalletSync] = useState('auto');
   const [theme, setTheme] = useState('auto'); // 'auto' by default
   const [dataUsage, setDataUsage] = useState(50);
+  const { setTheme: setAppTheme } = React.useContext(ThemeContext);
 
   const currentTheme = theme === 'auto' ? systemTheme : theme;
   const isDark = currentTheme === 'dark';
   const themedStyles = getThemedStyles(isDark);
 
-  const user = auth.currentUser;
-
-  // Fetch theme from Firestore on mount
   useEffect(() => {
-    const fetchTheme = async () => {
-      if (!user) return;
-      const docRef = doc(db, 'users', user.uid);
-      const docSnap = await getDoc(docRef);
-      if (docSnap.exists()) {
-        const savedTheme = docSnap.data().theme;
-        if (savedTheme) setTheme(savedTheme);
-      }
-    };
-    fetchTheme();
+    requestApi('/api/users/me', undefined, 'GET')
+      .then((user) => {
+        setTheme(user.theme || 'auto');
+        setAppTheme(user.theme || 'auto');
+      })
+      .catch((error) => Alert.alert('Unable to load settings', error.message));
   }, []);
 
-  // Update Firestore on theme change
   const handleThemeChange = async (item) => {
-    setTheme(item);
-    if (user) {
-      try {
-        await setDoc(doc(db, 'users', user.uid), { theme: item }, { merge: true });
-      } catch (e) {
-        console.log('Failed to save theme:', e);
-      }
+    try {
+      const user = await requestApi('/api/users/me', { theme: item }, 'PATCH');
+      setTheme(user.theme);
+      setAppTheme(user.theme);
+    } catch (error) {
+      Alert.alert('Unable to save theme', error.message);
     }
   };
 
@@ -63,7 +55,10 @@ export default function SettingsScreen({ navigation }) {
 
   return (
     <ScrollView style={themedStyles.container}>
-      <TouchableOpacity style={styles.backButton} onPress={() => navigation.navigate('Profile')}>
+      <TouchableOpacity
+        style={styles.backButton}
+        onPress={() => navigation.navigate('MainTabs', { screen: 'Profile' })}
+      >
         <Ionicons name="arrow-back-circle" size={32} color={isDark ? '#fff' : '#000'} />
       </TouchableOpacity>
 
@@ -111,7 +106,7 @@ export default function SettingsScreen({ navigation }) {
       </View>
 
       <View style={styles.footer}>
-        <Text style={themedStyles.footerText}>About Raseed</Text>
+        <Text style={themedStyles.footerText}>About ReceiptAI</Text>
         <Text style={themedStyles.footerText}>Version: 1.0.0, 07/07/2025</Text>
         <Text style={[themedStyles.footerText, { textDecorationLine: 'underline' }]}>
           Terms & Conditions

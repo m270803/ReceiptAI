@@ -6,14 +6,8 @@ import {
   Dimensions,
   ScrollView,
 } from 'react-native';
-import { getAuth } from 'firebase/auth';
-import {
-  collection,
-  getDocs,
-  query,
-} from 'firebase/firestore';
-import { db } from '../firebaseConfig';
 import { PieChart, LineChart, BarChart } from 'react-native-chart-kit';
+import { requestApi } from '../utils/api';
 
 const screenWidth = Dimensions.get('window').width;
 
@@ -30,168 +24,19 @@ export default function ViewInsightsScreen() {
   const [topCategory, setTopCategory] = useState('');
   const [avgDaily, setAvgDaily] = useState(0);
 
-  const auth = getAuth();
-  const user = auth.currentUser;
-
   const fetchInsights = async () => {
-    if (!user) return;
-
     try {
-      const now = new Date();
-      const currentMonth = now.getMonth();
-      const currentYear = now.getFullYear();
-
-      // ---------- EXPENSES (current month) ----------
-      const expensesRef = collection(
-        db,
-        'users',
-        user.uid,
-        'incomeTrackers',
-        'default',
-        'expenses'
-      );
-      const expensesQuery = query(expensesRef);
-      const expensesSnap = await getDocs(expensesQuery);
-
-      const expensesRaw = expensesSnap.docs
-        .map((doc) => doc.data())
-        .filter((item) => {
-          if (!item.createdAt) return false;
-          let date;
-          if (item.createdAt?.toDate) {
-            date = item.createdAt.toDate();
-          } else if (typeof item.createdAt === 'string') {
-            date = new Date(item.createdAt);
-          } else {
-            return false;
-          }
-          return (
-            date.getMonth() === currentMonth &&
-            date.getFullYear() === currentYear
-          );
-        });
-
-      // ---------- INCOME (current month) ----------
-      const incomesRef = collection(
-        db,
-        'users',
-        user.uid,
-        'incomeTrackers',
-        'default',
-        'incomes'
-      );
-      const incomesQuery = query(incomesRef);
-      const incomesSnap = await getDocs(incomesQuery);
-
-      const incomesRaw = incomesSnap.docs
-        .map((doc) => doc.data())
-        .filter((item) => {
-          if (!item.date) return false;
-          const d = new Date(item.date);
-          return (
-            d.getMonth() === currentMonth &&
-            d.getFullYear() === currentYear
-          );
-        });
-
-      // ---------- Group expenses by category (Pie) ----------
-      const groupedByCategory = {};
-      let totalExp = 0;
-
-      expensesRaw.forEach((item) => {
-        const cat = item.category || 'Other';
-        const amt = parseFloat(item.amount) || 0;
-        if (!groupedByCategory[cat]) groupedByCategory[cat] = 0;
-        groupedByCategory[cat] += amt;
-        totalExp += amt;
-      });
-
-      const pieColors = [
-        '#FF6384',
-        '#36A2EB',
-        '#FFCE56',
-        '#4BC0C0',
-        '#9966FF',
-        '#FF9F40',
-      ];
-
-      const pieChartData = Object.entries(groupedByCategory).map(
-        ([cat, amt], idx) => ({
-          name: cat,
-          amount: amt,
-          color: pieColors[idx % pieColors.length],
-          legendFontColor: '#333',
-          legendFontSize: 13,
-        })
-      );
-
-      // ---------- Daily expenses (Line chart) ----------
-      const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
-      const dailyTotals = Array(daysInMonth).fill(0);
-
-      expensesRaw.forEach((item) => {
-        let dateObj;
-        if (item.createdAt?.toDate) {
-          dateObj = item.createdAt.toDate();
-        } else if (typeof item.createdAt === 'string') {
-          dateObj = new Date(item.createdAt);
-        } else {
-          return;
-        }
-        const day = dateObj.getDate(); // 1..daysInMonth
-        const amt = parseFloat(item.amount) || 0;
-        dailyTotals[day - 1] += amt;
-      });
-
-      // labels: 1, 5, 10, 15, 20, 25, last
-      const labels = [];
-      const values = [];
-      for (let i = 0; i < daysInMonth; i++) {
-        const day = i + 1;
-        const includeLabel =
-          day === 1 ||
-          day === daysInMonth ||
-          day === 5 ||
-          day === 10 ||
-          day === 15 ||
-          day === 20 ||
-          day === 25;
-        labels.push(includeLabel ? String(day) : '');
-        values.push(dailyTotals[i]);
-      }
-
-      // ---------- Top categories (Bar chart) ----------
-      const sortedCats = Object.entries(groupedByCategory).sort(
-        (a, b) => b[1] - a[1]
-      );
-      const top5 = sortedCats.slice(0, 5);
-      const barLabelsLocal = top5.map(([cat]) => cat);
-      const barValuesLocal = top5.map(([, amt]) => amt);
-
-      // ---------- Income totals ----------
-      let totalInc = 0;
-      incomesRaw.forEach((it) => {
-        totalInc += parseFloat(it.amount) || 0;
-      });
-
-      const savingsLocal = totalInc - totalExp;
-
-      // ---------- Smart insights ----------
-      const highestCat = sortedCats[0]?.[0] || '';
-      const avgDailyLocal =
-        daysInMonth > 0 ? totalExp / daysInMonth : 0;
-
-      // ---------- Set state ----------
-      setPieData(pieChartData);
-      setLineLabels(labels);
-      setLineValues(values);
-      setBarLabels(barLabelsLocal);
-      setBarValues(barValuesLocal);
-      setTotalExpenses(totalExp);
-      setTotalIncome(totalInc);
-      setSavings(savingsLocal);
-      setTopCategory(highestCat);
-      setAvgDaily(avgDailyLocal);
+      const insights = await requestApi('/api/insights', undefined, 'GET');
+      setPieData(insights.pieData);
+      setLineLabels(insights.lineLabels);
+      setLineValues(insights.lineValues);
+      setBarLabels(insights.barLabels);
+      setBarValues(insights.barValues);
+      setTotalExpenses(insights.totalExpenses);
+      setTotalIncome(insights.totalIncome);
+      setSavings(insights.savings);
+      setTopCategory(insights.topCategory);
+      setAvgDaily(insights.avgDaily);
     } catch (error) {
       console.error('Error loading insights:', error);
     }

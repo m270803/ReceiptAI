@@ -1,28 +1,44 @@
 import React, { useEffect } from 'react';
 import { View, Text, StyleSheet, SafeAreaView, Dimensions } from 'react-native';
+import { restoreSession } from '../utils/api';
 
 const { height } = Dimensions.get('window');
 
 export default function Interface({ navigation }) {
   useEffect(() => {
-    const timer = setTimeout(() => {
-      navigation.replace('Login'); // Navigate to LoginScreen after 5 seconds
-    }, 5000);
+    let active = true;
+    restoreSession()
+      .then((user) => {
+        if (!active) return;
+        if (!user) {
+          navigation.replace('Login');
+        } else if (user.emailVerified) {
+          navigation.replace('MainTabs');
+        } else {
+          navigation.replace('OTPVerification', { uid: user.uid, email: user.email });
+        }
+      })
+      .catch((error) => {
+        console.error('Unable to restore session:', error.message);
+        if (active) navigation.replace('Login');
+      });
 
-    return () => clearTimeout(timer); // Clean up on unmount
+    return () => {
+      active = false;
+    };
   }, []);
 
   return (
     <SafeAreaView style={styles.container}>
       <View style={styles.logoBox}>
-        <Text style={styles.logoText}>Raseed</Text>
+        <Text style={styles.logoText}>ReceiptAI</Text>
       </View>
 
       {/* ⭐ ADDED LINE: Tagline below logo box */}
       <Text style={styles.tagline}>Smart Finance Tracker And Receipt Scanner</Text>
 
       <Text style={styles.footerText}>from</Text>
-      <Text style={[styles.footerText, { bottom: 60 }]}>Raseed</Text>
+      <Text style={[styles.footerText, { bottom: 60 }]}>ReceiptAI</Text>
     </SafeAreaView>
   );
 }
