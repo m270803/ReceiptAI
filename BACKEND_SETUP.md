@@ -15,7 +15,7 @@ Groq API key is never included in the mobile app.
 3. Configure `GROQ_API_KEY` for assistant and receipt scanning. Set
    `RAZORPAY_KEY_ID` and `RAZORPAY_KEY_SECRET` in the backend `.env` to your
    Razorpay test credentials. Never add either credential to the mobile app or
-   commit them.    Razorpay UPI checkout creates hosted payment links; when the app
+   commit them. Razorpay UPI checkout creates hosted payment links; when the app
    confirms a paid link directly with Razorpay or receives a verified
    `payment_link.paid` webhook, the transaction is stored in the signed-in
    user's payment history and Expenses. Only verified, fully paid links are
@@ -25,8 +25,8 @@ Groq API key is never included in the mobile app.
    `https://<your-api-host>/api/payments/razorpay/webhook`, subscribe to
    `payment_link.paid`, and set the webhook signing secret as
    `RAZORPAY_WEBHOOK_SECRET` in `.env`. The app's status check is also available
-   when webhooks are not configured. Local
-   development uses `DEV_OTP_CODE` (default `1234`) instead of email delivery.
+   when webhooks are not configured. Local development uses `DEV_OTP_CODE`
+   (default `1234`) instead of email delivery.
    In production, set `NODE_ENV=production`, remove `DEV_OTP_CODE`, and set
    `SENDGRID_API_KEY` and `SENDGRID_FROM_EMAIL` for email verification.
 4. Install dependencies and start the API:
