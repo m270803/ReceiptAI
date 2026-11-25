@@ -9,29 +9,15 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { getAuth } from 'firebase/auth';
-import {
-  collection,
-  addDoc,
-  getDocs,
-  deleteDoc,
-  doc,
-} from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { requestApi } from '../utils/api';
 
 export default function BudgetsScreen() {
   const [category, setCategory] = useState('');
   const [amount, setAmount] = useState('');
   const [budgets, setBudgets] = useState([]);
 
-  const auth = getAuth();
-  const user = auth.currentUser;
-
   const fetchBudgets = async () => {
-    const userBudgetsRef = collection(db, 'users', user.uid, 'budgets');
-    const snapshot = await getDocs(userBudgetsRef);
-    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    setBudgets(data);
+    setBudgets(await requestApi('/api/finance/budgets', undefined, 'GET'));
   };
 
   const saveBudget = async () => {
@@ -41,15 +27,23 @@ export default function BudgetsScreen() {
       amount: parseFloat(amount),
       createdAt: new Date().toISOString(),
     };
-    await addDoc(collection(db, 'users', user.uid, 'budgets'), newBudget);
-    fetchBudgets();
-    setCategory('');
-    setAmount('');
+    try {
+      await requestApi('/api/finance/budgets', newBudget);
+      await fetchBudgets();
+      setCategory('');
+      setAmount('');
+    } catch (error) {
+      Alert.alert('Unable to save budget', error.message);
+    }
   };
 
   const deleteBudget = async (id) => {
-    await deleteDoc(doc(db, 'users', user.uid, 'budgets', id));
-    fetchBudgets();
+    try {
+      await requestApi(`/api/finance/budgets/${id}`, undefined, 'DELETE');
+      await fetchBudgets();
+    } catch (error) {
+      Alert.alert('Unable to delete budget', error.message);
+    }
   };
 
   const editBudget = async (item) => {
@@ -59,9 +53,7 @@ export default function BudgetsScreen() {
   };
 
   useEffect(() => {
-    if (user) {
-      fetchBudgets();
-    }
+    fetchBudgets().catch((error) => Alert.alert('Unable to load budgets', error.message));
   }, []);
 
   return (

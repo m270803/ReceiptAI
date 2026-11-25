@@ -9,9 +9,8 @@ import {
   Dimensions,
   Alert,
 } from 'react-native';
-import { auth } from '../firebaseConfig';
-import { signInWithEmailAndPassword } from 'firebase/auth';
 import { Ionicons } from '@expo/vector-icons';
+import { loginAccount } from '../utils/api';
 
 const { height } = Dimensions.get('window');
 
@@ -30,19 +29,17 @@ export default function LoginScreen({ navigation }) {
     setIsSubmitting(true);
 
     try {
-      const userCredential = await signInWithEmailAndPassword(auth, email, password);
-      const user = userCredential.user;
+      const user = await loginAccount({ email, password });
 
-      navigation.navigate('Home');
+      if (!user.emailVerified) {
+        navigation.navigate('OTPVerification', { uid: user.uid, email: user.email });
+        return;
+      }
+
+      navigation.navigate('MainTabs');
     } catch (error) {
       console.error('Login error:', error);
-      if (error.code === 'auth/invalid-credential') {
-        Alert.alert('Login Failed', 'Incorrect email or password.');
-      } else if (error.code === 'auth/user-not-found') {
-        Alert.alert('Login Failed', 'No account found with this email.');
-      } else {
-        Alert.alert('Login Failed', error.message);
-      }
+      Alert.alert('Login Failed', error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -53,7 +50,7 @@ export default function LoginScreen({ navigation }) {
       {/* Top dark section with logo */}
       <View style={styles.topContainer}>
         <View style={styles.logoBox}>
-          <Text style={styles.logoText}>Raseed</Text>
+          <Text style={styles.logoText}>ReceiptAI</Text>
         </View>
       </View>
 

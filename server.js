@@ -1,61 +1,68 @@
-// server.js
 require('dotenv').config();
-const express = require('express');
+
 const cors = require('cors');
-const sgMail = require('@sendgrid/mail');
+const express = require('express');
+const mongoose = require('mongoose');
+
+const authRoutes = require('./routes/authRoutes');
+const chatRoutes = require('./routes/chatRoutes');
+const financeRoutes = require('./routes/financeRoutes');
+const insightRoutes = require('./routes/insightRoutes');
+const mockPaymentRoutes = require('./routes/mockPaymentRoutes');
+const razorpayPaymentRoutes = require('./routes/razorpayPaymentRoutes');
+const receiptRoutes = require('./routes/receiptRoutes');
+const userRoutes = require('./routes/userRoutes');
 
 const app = express();
+const port = Number(process.env.PORT) || 8082;
+const mongoUri = process.env.MONGODB_URI || 'mongodb://127.0.0.1:27017/raseed';
+
 app.use(cors());
-app.use(express.json());
+app.post(
+  '/api/payments/razorpay/webhook',
+  express.raw({ type: 'application/json' }),
+  require('./controllers/razorpayPaymentController').handleRazorpayWebhook
+);
+app.use(express.json({ limit: '8mb' }));
 
-sgMail.setApiKey(process.env.SENDGRID_API_KEY); // Make sure .env has SENDGRID_API_KEY
-
-app.post('/send-otp', async (req, res) => {
-  const { email, otp } = req.body;
-
-  const msg = {
-  to: email,
-  from: 'noreplyraseed@gmail.com',
-  subject: 'Your One-Time Password (OTP) for Raseed Verification',
-  text: `Hello,
-
-Thank you for choosing Raseed.
-
-Your One-Time Password (OTP) is: ${otp}
-
-Please enter this code in the app to verify your email address. 
-This OTP is valid for the next 10 minutes. Do not share this code with anyone.
-
-If you did not request this code, please ignore this message.
-
-Best regards,  
-The Raseed Team`,
-  html: `
-    <div style="font-family: Arial, sans-serif; font-size: 16px; color: #333;">
-      <p>Hello,</p>
-      <p>Thank you for choosing <strong>Raseed</strong>.</p>
-      <p>Your One-Time Password (OTP) is:</p>
-      <div style="font-size: 24px; font-weight: bold; color: #2e2d63; margin: 10px 0;">
-        ${otp}
-      </div>
-      <p>Please enter this code in the app to verify your email address.</p>
-      <p><strong>This OTP is valid for the next 10 minutes.</strong></p>
-      <p style="color: #888;">Do not share this code with anyone.</p>
-      <hr />
-      <p style="font-size: 14px; color: #999;">If you did not request this code, please ignore this email.</p>
-      <p style="font-size: 14px; color: #999;">— The Raseed Team</p>
-    </div>
-  `
-};
-
-
-  try {
-    await sgMail.send(msg);
-    res.status(200).json({ message: 'OTP email sent successfully' });
-  } catch (error) {
-    console.error('SendGrid Error:', error.response?.body || error.message);
-    res.status(500).json({ message: 'Failed to send OTP email' });
-  }
+app.get('/health', (_req, res) => {
+  res.json({ status: 'ok', database: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected' });
 });
 
-app.listen(8082, () => console.log('Email OTP server running on port 8082'));
+app.use('/api/auth', authRoutes);
+app.use('/api/users', userRoutes);
+app.use('/api/finance', financeRoutes);
+app.use('/api/insights', insightRoutes);
+app.use('/api/payments', mockPaymentRoutes);
+app.use('/api/payments', razorpayPaymentRoutes);
+app.use('/api/receipts', receiptRoutes);
+app.use('/api/assistant/chat', chatRoutes);
+
+app.use((req, res) => {
+  res.status(404).json({ error: `Route not found: ${req.method} ${req.path}` });
+});
+
+app.use((error, _req, res, _next) => {
+  if (error instanceof SyntaxError && error.status === 400 && 'body' in error) {
+    return res.status(400).json({ error: 'Request body must be valid JSON.' });
+  }
+
+  console.error('Unhandled API error:', error.message);
+  return res.status(500).json({ error: 'Internal server error.' });
+});
+
+async function startServer() {
+  await mongoose.connect(mongoUri);
+  return app.listen(port, () => {
+    console.log(`ReceiptAI API server listening on port ${port} with MongoDB connected.`);
+  });
+}
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    console.error('Unable to connect to MongoDB:', error.message);
+    process.exitCode = 1;
+  });
+}
+
+module.exports = { app, startServer };

@@ -8,16 +8,8 @@ import {
   Alert,
   StyleSheet,
 } from 'react-native';
-import { getAuth } from 'firebase/auth';
-import {
-  collection,
-  addDoc,
-  getDocs,
-  deleteDoc,
-  doc,
-} from 'firebase/firestore';
-import { db } from '../firebaseConfig';
 import { useNavigation } from '@react-navigation/native';
+import { requestApi } from '../utils/api';
 
 export default function IncomeTrackingScreen() {
   const [source, setSource] = useState('');
@@ -25,8 +17,6 @@ export default function IncomeTrackingScreen() {
   const [incomeList, setIncomeList] = useState([]);
   const [expenses, setExpenses] = useState([]);
 
-  const auth = getAuth();
-  const user = auth.currentUser;
   const navigation = useNavigation();
 
   /* ---------------- SAVE INCOME ---------------- */
@@ -39,46 +29,35 @@ export default function IncomeTrackingScreen() {
       date: new Date().toISOString(),
     };
 
-    await addDoc(
-      collection(db, 'users', user.uid, 'incomeTrackers', 'default', 'incomes'),
-      newIncome
-    );
-
-    setSource('');
-    setAmount('');
-    fetchIncomes();
+    try {
+      await requestApi('/api/finance/incomes', newIncome);
+      setSource('');
+      setAmount('');
+      await fetchIncomes();
+    } catch (error) {
+      Alert.alert('Unable to save income', error.message);
+    }
   };
 
   /* ---------------- FETCH INCOMES ---------------- */
   const fetchIncomes = async () => {
-    const incomeRef = collection(db, 'users', user.uid, 'incomeTrackers', 'default', 'incomes');
-    const snapshot = await getDocs(incomeRef);
-    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    setIncomeList(data);
+    setIncomeList(await requestApi('/api/finance/incomes', undefined, 'GET'));
   };
 
   /* ---------------- FETCH EXPENSES (FIXED PATH) ---------------- */
   const fetchExpenses = async () => {
     // FIXED: Correct path for Expense Tracker
-    const expenseRef = collection(
-      db,
-      'users',
-      user.uid,
-      'incomeTrackers',
-      'default',
-      'expenses'
-    );
-
-    const snapshot = await getDocs(expenseRef);
-    const data = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    setExpenses(data);
+    setExpenses(await requestApi('/api/finance/expenses', undefined, 'GET'));
   };
 
   /* ---------------- DELETE INCOME ---------------- */
   const deleteIncome = async (id) => {
-    const docRef = doc(db, 'users', user.uid, 'incomeTrackers', 'default', 'incomes', id);
-    await deleteDoc(docRef);
-    fetchIncomes();
+    try {
+      await requestApi(`/api/finance/incomes/${id}`, undefined, 'DELETE');
+      await fetchIncomes();
+    } catch (error) {
+      Alert.alert('Unable to delete income', error.message);
+    }
   };
 
   /* ---------------- EDIT INCOME ---------------- */
@@ -89,10 +68,9 @@ export default function IncomeTrackingScreen() {
   };
 
   useEffect(() => {
-    if (user) {
-      fetchIncomes();
-      fetchExpenses(); // load expenses for summary
-    }
+    Promise.all([fetchIncomes(), fetchExpenses()]).catch((error) =>
+      Alert.alert('Unable to load finance data', error.message)
+    );
   }, []);
 
   /* ---------------- SUMMARY CALCULATIONS ---------------- */
@@ -160,7 +138,7 @@ export default function IncomeTrackingScreen() {
       />
 
       {/* GO TO EXPENSES */}
-      <TouchableOpacity onPress={() => navigation.navigate('AddExpense')}>
+      <TouchableOpacity onPress={() => navigation.navigate('MainTabs', { screen: 'Expenses' })}>
         <Text style={{ color: '#007AFF', textAlign: 'center', marginTop: 10, marginBottom: 50 }}>
           Go to Expense Tracker
         </Text>

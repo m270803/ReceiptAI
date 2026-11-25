@@ -11,9 +11,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
-import { auth, db } from '../firebaseConfig';
-import { doc, getDoc } from 'firebase/firestore';
-import { signOut } from 'firebase/auth';
+import { clearSession, requestApi } from '../utils/api';
 
 const ProfileScreen = () => {
   const navigation = useNavigation();
@@ -22,17 +20,7 @@ const ProfileScreen = () => {
 
   const fetchUserData = async () => {
     try {
-      const uid = auth.currentUser?.uid;
-      if (!uid) return;
-
-      const docRef = doc(db, 'users', uid);
-      const docSnap = await getDoc(docRef);
-
-      if (docSnap.exists()) {
-        setUserData(docSnap.data());
-      } else {
-        console.warn('No such user document!');
-      }
+      setUserData(await requestApi('/api/users/me', undefined, 'GET'));
     } catch (error) {
       console.error('Error fetching user data:', error);
     } finally {
@@ -42,8 +30,8 @@ const ProfileScreen = () => {
 
   const handleLogout = async () => {
     try {
-      await signOut(auth);
-      navigation.reset({
+      await clearSession();
+      navigation.getParent()?.reset({
         index: 0,
         routes: [{ name: 'Login' }],
       });

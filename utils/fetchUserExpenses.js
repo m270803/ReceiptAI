@@ -1,9 +1,6 @@
-// utils/fetchUserExpenses.js
-import { collection, getDocs } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { requestApi } from './api';
 
 export const fetchUserExpenses = async (uid) => {
-  const expensesRef = collection(db, 'users', uid, 'incomeTrackers', 'expenses');
-  const snapshot = await getDocs(expensesRef);
-  return snapshot.docs.map((doc) => doc.data());
+  if (!uid) throw new Error('A signed-in user is required to load expenses.');
+  return requestApi('/api/finance/expenses', undefined, 'GET');
 };

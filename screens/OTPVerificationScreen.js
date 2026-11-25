@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -10,41 +10,70 @@ import {
   Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { doc, updateDoc, getDoc } from 'firebase/firestore';
-import { db } from '../firebaseConfig';
+import { clearSession, getSessionUser, requestApi, updateSessionUser } from '../utils/api';
 
 const { height } = Dimensions.get('window');
 
 export default function OTPVerification({ route, navigation }) {
   const { uid, email } = route.params;
   const [emailOtp, setEmailOtp] = useState('');
+  const [isSending, setIsSending] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  const [developmentOtp, setDevelopmentOtp] = useState(false);
 
-  const verifyEmailOtp = async () => {
-    if (!emailOtp || emailOtp.length !== 6) {
-      return Alert.alert('Invalid OTP', 'Please enter the 6-digit code.');
+  const sendOtp = async (showSuccess = false) => {
+    if ((await getSessionUser())?.uid !== uid) {
+      Alert.alert('Session expired', 'Please sign up again to request a verification code.');
+      return;
     }
 
+    setIsSending(true);
     try {
-      const docRef = doc(db, 'users', uid);
-      const userSnap = await getDoc(docRef);
-
-      if (!userSnap.exists()) {
-        return Alert.alert('User not found');
+      const result = await requestApi('/api/auth/send-otp', {});
+      setDevelopmentOtp(Boolean(result.developmentOtp));
+      if (showSuccess) {
+        Alert.alert(
+          result.developmentOtp ? 'Development code ready' : 'Code sent',
+          result.developmentOtp
+            ? 'Enter the development code configured for this server.'
+            : `A new verification code was sent to ${email}.`
+        );
       }
+    } catch (error) {
+      Alert.alert('Unable to send code', error.message);
+    } finally {
+      setIsSending(false);
+    }
+  };
 
-      const savedOtp = userSnap.data().emailOtp;
+  useEffect(() => {
+    sendOtp();
+  }, []);
 
-      if (emailOtp === savedOtp) {
-        await updateDoc(docRef, { verifiedEmail: true });
-        Alert.alert('Email verified!', '', [
-          { text: 'Continue', onPress: () => navigation.replace('Login') },
-        ]);
-      } else {
-        Alert.alert('Incorrect OTP', 'Please check your email and try again.');
-      }
+  const verifyEmailOtp = async () => {
+    if (emailOtp.length !== (developmentOtp ? 4 : 6)) {
+      return Alert.alert(
+        'Invalid OTP',
+        developmentOtp ? 'Please enter the 4-digit development code.' : 'Please enter the 6-digit code.'
+      );
+    }
+
+    if ((await getSessionUser())?.uid !== uid) {
+      return Alert.alert('Session expired', 'Please sign up again to verify your email.');
+    }
+
+    setIsVerifying(true);
+    try {
+      const result = await requestApi('/api/auth/verify-otp', { otp: emailOtp });
+      await updateSessionUser(result.user);
+      await clearSession();
+      Alert.alert('Email verified!', '', [
+        { text: 'Continue', onPress: () => navigation.replace('Login') },
+      ]);
     } catch (err) {
-      console.error(err);
       Alert.alert('Verification failed', err.message);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -58,7 +87,11 @@ export default function OTPVerification({ route, navigation }) {
 
       <View style={styles.bottomContainer}>
         <Text style={styles.loginTitle}>Verify your Email</Text>
-        <Text style={styles.loginSubtitle}>Enter the 6-digit OTP sent to {email}</Text>
+        <Text style={styles.loginSubtitle}>
+          {developmentOtp
+            ? 'Enter the configured 4-digit development code.'
+            : `Enter the 6-digit OTP sent to ${email}`}
+        </Text>
 
         <Text style={styles.label}>EMAIL OTP</Text>
         <TextInput
@@ -67,11 +100,22 @@ export default function OTPVerification({ route, navigation }) {
           value={emailOtp}
           onChangeText={setEmailOtp}
           keyboardType="number-pad"
-          maxLength={6}
+          maxLength={developmentOtp ? 4 : 6}
         />
 
-        <TouchableOpacity style={styles.otpButton} onPress={verifyEmailOtp}>
-          <Text style={styles.otpButtonText}>Verify</Text>
+        <TouchableOpacity
+          style={styles.otpButton}
+          onPress={verifyEmailOtp}
+          disabled={isVerifying}
+        >
+          <Text style={styles.otpButtonText}>
+            {isVerifying ? 'Verifying...' : 'Verify'}
+          </Text>
+        </TouchableOpacity>
+        <TouchableOpacity onPress={() => sendOtp(true)} disabled={isSending}>
+          <Text style={styles.resendText}>
+            {isSending ? 'Sending code...' : 'Resend code'}
+          </Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -137,5 +181,12 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: 'bold',
     fontSize: 15,
+  },
+  resendText: {
+    color: '#1c2b48',
+    fontWeight: '600',
+    fontSize: 14,
+    textAlign: 'center',
+    marginTop: 18,
   },
 });

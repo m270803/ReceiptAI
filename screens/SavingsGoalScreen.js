@@ -9,16 +9,7 @@ import {
   Alert,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import {
-  addDoc,
-  collection,
-  deleteDoc,
-  doc,
-  getDocs,
-  updateDoc,
-} from 'firebase/firestore';
-import { db } from '../firebaseConfig';
-import { getAuth } from 'firebase/auth';
+import { requestApi } from '../utils/api';
 
 export default function SavingsGoalScreen() {
   const [title, setTitle] = useState('');
@@ -27,20 +18,13 @@ export default function SavingsGoalScreen() {
   const [goals, setGoals] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
-  const auth = getAuth();
-  const user = auth.currentUser;
-  const userId = user?.uid;
-
   const fetchGoals = async () => {
-    if (!userId) return;
-    const snapshot = await getDocs(collection(db, 'users', userId, 'savingsGoals'));
-    const list = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
-    setGoals(list);
+    setGoals(await requestApi('/api/finance/savings-goals', undefined, 'GET'));
   };
 
   useEffect(() => {
-    fetchGoals();
-  }, [userId]);
+    fetchGoals().catch((error) => Alert.alert('Unable to load goals', error.message));
+  }, []);
 
   const saveGoal = async () => {
     if (!title || !target || !saved) {
@@ -57,11 +41,11 @@ export default function SavingsGoalScreen() {
 
     try {
       if (editingId) {
-        await updateDoc(doc(db, 'users', userId, 'savingsGoals', editingId), goalData);
+        await requestApi(`/api/finance/savings-goals/${editingId}`, goalData, 'PUT');
         setEditingId(null);
         Alert.alert('Goal updated!');
       } else {
-        await addDoc(collection(db, 'users', userId, 'savingsGoals'), goalData);
+        await requestApi('/api/finance/savings-goals', goalData);
         Alert.alert('Goal added!');
       }
 
@@ -84,11 +68,11 @@ export default function SavingsGoalScreen() {
 
   const handleDelete = async (id) => {
     try {
-      await deleteDoc(doc(db, 'users', userId, 'savingsGoals', id));
-      fetchGoals();
+      await requestApi(`/api/finance/savings-goals/${id}`, undefined, 'DELETE');
+      await fetchGoals();
     } catch (error) {
       console.error('Delete failed:', error);
-      Alert.alert('Error deleting goal');
+      Alert.alert('Error deleting goal', error.message);
     }
   };
 
